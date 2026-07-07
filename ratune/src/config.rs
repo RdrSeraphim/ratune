@@ -1036,6 +1036,8 @@ struct PlayerSection {
     /// Register on the session D-Bus as an MPRIS player (Linux media keys, etc.).
     #[serde(default = "default_mpris")]
     mpris: bool,
+    #[serde(default = "default_discord")]
+    discord: bool,
     /// When true, playback wraps to the first queue track after the last one ends.
     #[serde(default = "default_queue_loop")]
     queue_loop: bool,
@@ -1047,6 +1049,7 @@ impl Default for PlayerSection {
             default_volume: default_volume(),
             max_bit_rate: 0,
             mpris: default_mpris(),
+            discord: default_discord(),
             queue_loop: default_queue_loop(),
         }
     }
@@ -1088,6 +1091,10 @@ fn default_volume() -> u8 {
 }
 
 fn default_mpris() -> bool {
+    true
+}
+
+fn default_discord() -> bool {
     true
 }
 
@@ -1163,6 +1170,8 @@ pub struct Config {
     pub max_bit_rate: u32,
     /// Linux: register MPRIS on the session bus (media keys, `playerctl`).
     pub mpris_enabled: bool,
+    /// Discord Rich Presence
+    pub discord_enabled: bool,
     /// When true, playback wraps to the first queue track after the last one ends.
     pub queue_loop: bool,
     /// When true, show ratings in the UI and allow rating keybinds / MPRIS UserRating (`[ratings].enabled`).
@@ -1599,6 +1608,7 @@ impl Config {
             default_volume: file_cfg.player.default_volume,
             max_bit_rate: file_cfg.player.max_bit_rate,
             mpris_enabled: file_cfg.player.mpris,
+            discord_enabled: file_cfg.player.discord,
             queue_loop: file_cfg.player.queue_loop,
             ratings_enabled: file_cfg.ratings.enabled,
             rating_stars: RatingStarGlyphs {
@@ -1745,6 +1755,7 @@ password = ""
 default_volume = 70
 max_bit_rate = 0   # 0 = unlimited; set e.g. 320 to cap streaming bitrate
 # mpris = true     # Linux: register on session D-Bus for media keys / playerctl (default: true)
+# discord = true    # Send playback information to Discord rich presence via IPC (default: true)
 # queue_loop = true   # wrap to first track after the last queue item (default: true)
 
 [ratings]

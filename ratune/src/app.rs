@@ -692,6 +692,7 @@ pub struct App {
     /// Linux: MPRIS D-Bus session registration and shared playback snapshot.
     #[cfg(target_os = "linux")]
     pub mpris: Option<crate::mpris::MprisLink>,
+    pub discord: Option<crate::discord::DiscordLink>,
 
     /// Set after alternate screen when `album_art_backend = ratatui-image` and the probe succeeds.
     pub art_picker: Option<ratatui_image::picker::Picker>,
@@ -866,6 +867,7 @@ impl App {
             np_kitty_prepared: None,
             #[cfg(target_os = "linux")]
             mpris: None,
+            discord: None,
         };
         app.load_persisted_favorites();
         if !app.config.radio_enabled {
@@ -2741,6 +2743,7 @@ impl App {
                 self.apply_dynamic_accent(accent);
                 #[cfg(target_os = "linux")]
                 self.mpris_emit_props();
+                self.discord_sync_now();
             }
             LibraryUpdate::StatusFlash { msg, secs } => {
                 self.flash_status_secs(msg, secs);
@@ -3088,7 +3091,9 @@ impl App {
                         "Rating updated"
                     });
                     if kind == FavoriteKind::Song {
+                        #[cfg(target_os = "linux")]
                         self.mpris_emit_props();
+                        self.discord_sync_now();
                     }
                 }
             }
@@ -3395,6 +3400,7 @@ impl App {
                     }
                     self.scrobble_track_started(&song);
                     self.playback.current_song = Some(song);
+                    self.discord_sync_now();
                 }
             }
             PlayerEvent::Progress { elapsed, total } => {
@@ -3463,6 +3469,7 @@ impl App {
                     }
                     self.scrobble_track_started(&song);
                     self.playback.current_song = Some(song);
+                    self.discord_sync_now();
                 }
             }
             PlayerEvent::TrackEnded => {
@@ -3476,6 +3483,7 @@ impl App {
                     self.playback.player_loaded = false;
                     self.playback.elapsed = Duration::ZERO;
                     self.playback.total = None;
+                    self.discord_sync_now();
                     return;
                 }
                 if self.queue.next() {
@@ -3488,6 +3496,7 @@ impl App {
                 } else {
                     self.playback.current_song = None;
                     self.playback.elapsed = std::time::Duration::ZERO;
+                    self.discord_sync_now();
                 }
             }
             PlayerEvent::Error(e) => {
@@ -3537,6 +3546,65 @@ impl App {
     #[cfg(target_os = "linux")]
     pub fn mpris_sync_now(&mut self) {
         self.mpris_emit_props();
+    }
+
+    pub fn discord_sync_now(&mut self) {
+        if let Some(link) = &self.discord {
+            let notify = self.build_discord_update();
+            link.notify_update(notify);
+        }
+    }
+
+    pub fn discord_emit_seek(&mut self, _pos: std::time::Duration) {
+        self.discord_sync_now();
+    }
+
+    fn build_discord_update(&self) -> crate::discord::DiscordNotify {
+        let paused = !self.playback.player_loaded || self.playback.paused;
+        if paused {
+            return crate::discord::DiscordNotify::Clear;
+        }
+        let Some(song) = &self.playback.current_song else {
+            return crate::discord::DiscordNotify::Clear;
+        };
+
+        let cover_id = song.cover_art.clone();
+        let cover_bytes = if self.np_art_cache_matches() {
+            self.art_cache.as_ref().map(|(_, bytes)| bytes.clone())
+        } else {
+            None
+        };
+
+        crate::discord::DiscordNotify::Update {
+            artist: song.artist.clone().unwrap_or_default(),
+            song_name: song.title.clone(),
+            album: song.album.clone().unwrap_or_default(),
+            elapsed_secs: self.playback.elapsed.as_secs_f64(),
+            total_secs: self.playback.total.map(|d| d.as_secs_f64()),
+            paused: false,
+            cover_id,
+            cover_bytes,
+        }
+    }
+
+    fn discord_after_action(&mut self, action: &Action) {
+        use crate::action::Action::*;
+        if matches!(
+            action,
+            SearchStart
+                | SearchInput(_)
+                | SearchBackspace
+                | SearchConfirm
+                | SearchCancel
+                | HelpScrollUp
+                | HelpScrollDown
+        ) {
+            return;
+        }
+        if self.discord.is_none() {
+            return;
+        }
+        self.discord_sync_now();
     }
 
     #[cfg(target_os = "linux")]
@@ -3629,7 +3697,9 @@ impl App {
                 let new_pos = std::time::Duration::from_micros(final_micros as u64);
                 let _ = self.player_tx.send(PlayerCommand::Seek(new_pos));
                 self.playback.elapsed = new_pos;
+                #[cfg(target_os = "linux")]
                 self.mpris_emit_seek(new_pos);
+                self.discord_emit_seek(new_pos);
                 return;
             }
             SetPosition {
@@ -3649,7 +3719,9 @@ impl App {
                 }
                 let _ = self.player_tx.send(PlayerCommand::Seek(new_pos));
                 self.playback.elapsed = new_pos;
+                #[cfg(target_os = "linux")]
                 self.mpris_emit_seek(new_pos);
+                self.discord_emit_seek(new_pos);
                 return;
             }
             SetVolume(v) => {
@@ -3664,7 +3736,9 @@ impl App {
                 return;
             }
         }
+        #[cfg(target_os = "linux")]
         self.mpris_emit_props();
+        self.discord_sync_now();
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -3683,6 +3757,8 @@ impl App {
             let resolved = self.resolve_playback(&song);
             self.playback.current_song = Some(song);
             self.playback.player_loaded = true;
+            self.playback.elapsed = std::time::Duration::ZERO;
+            self.playback.total = duration;
             let gen = self.play_gen;
             match resolved {
                 ResolvedPlayback::Cached(path) => {
@@ -5032,7 +5108,9 @@ impl App {
                         let stored = if rating == 0 { None } else { Some(rating) };
                         self.set_item_rating(target.kind, &target.id, stored);
                         if target.kind == FavoriteKind::Song {
+                            #[cfg(target_os = "linux")]
                             self.mpris_emit_props();
+                            self.discord_sync_now();
                         }
                         self.spawn_set_rating(target.id.clone(), target.kind, rating);
                         self.flash_status(if rating == 0 {
@@ -5672,6 +5750,7 @@ impl App {
         }
         #[cfg(target_os = "linux")]
         self.mpris_after_action(&mpris_action_hook);
+        self.discord_after_action(&mpris_action_hook);
     }
 
     // ── Pending artist pre-selection ──────────────────────────────────────────

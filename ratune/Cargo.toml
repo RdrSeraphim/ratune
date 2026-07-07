@@ -33,7 +33,7 @@ image = "0.25"
 base64 = "0.22"
 flate2 = "1"
 palette_extract = "0.1"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "multipart"] }
 url = "2.5"
 rand = "0.8"
 rustfft = "6"
@@ -43,6 +43,7 @@ inquire = "0.7"
 keyring-core = "1"
 libc = "0.2"
 unicode-width = "0.2"
+discord-rich-presence = "1.1.0"
 
 # Platform credential stores for keyring-core — see https://crates.io/crates/keyring-core
 [target.'cfg(target_os = "linux")'.dependencies]

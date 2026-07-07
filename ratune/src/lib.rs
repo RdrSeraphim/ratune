@@ -5,6 +5,7 @@ mod color;
 mod config;
 mod debug;
 mod desktop_notify;
+mod discord;
 mod favorites_cache;
 mod fzf_picker;
 mod history;
@@ -245,6 +246,7 @@ pub async fn run() -> Result<()> {
     } else {
         None
     };
+    app.discord = discord::setup(app.config.discord_enabled);
     #[cfg(not(target_os = "linux"))]
     let mpris_ctrl_rx: Option<std::sync::mpsc::Receiver<crate::mpris::MprisControl>> = None;
 
@@ -1073,6 +1075,9 @@ async fn run_loop(
         eprintln!("warn: could not save history: {e}");
     }
     app.persist_scrobble_queue();
+    if let Some(discord) = app.discord.take() {
+        discord.shutdown();
+    }
     Ok(())
 }
 

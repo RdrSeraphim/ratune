@@ -160,7 +160,8 @@ fn render_art_placeholder(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = crate::ui::kitty_art::album_art_block()
         .title(art_title)
         .title_style(Style::default().fg(t.dimmed).add_modifier(Modifier::BOLD))
-        .border_style(Style::default().fg(t.border));
+        .border_style(Style::default().fg(t.border))
+        .style(style_with_bg(t.surface));
     frame.render_widget(block, area);
 
     if app.ratatui_art_ready()
