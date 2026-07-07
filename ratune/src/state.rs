@@ -623,6 +623,9 @@ pub struct PlaybackState {
     /// True once a `PlayUrl` has been sent to the engine for this track.
     /// False after restore (current_song is set but engine has nothing loaded).
     pub player_loaded: bool,
+    /// Unix timestamp (seconds) pinned when the current track started playing.
+    /// Used by Discord RPC so the progress bar doesn't jump on every re-sync.
+    pub track_started_at: Option<i64>,
 }
 
 #[cfg(test)]

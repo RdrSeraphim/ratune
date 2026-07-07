@@ -3433,6 +3433,12 @@ impl App {
                 self.queue.next();
                 self.playback.paused = false;
                 self.playback.elapsed = std::time::Duration::ZERO;
+                self.playback.track_started_at = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                );
                 if let Some(song) = self.queue.current().cloned() {
                     let cover_id = song.cover_art.clone();
                     if let Some(ref cid) = cover_id {
@@ -3579,7 +3585,7 @@ impl App {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let start_time = now - self.playback.elapsed.as_secs() as i64;
+        let start_time = self.playback.track_started_at.unwrap_or(now);
         let end_time = self.playback.total.map(|d| start_time + d.as_secs() as i64);
 
         crate::discord::DiscordNotify::Update {
@@ -3766,6 +3772,12 @@ impl App {
             self.playback.player_loaded = true;
             self.playback.elapsed = std::time::Duration::ZERO;
             self.playback.total = duration;
+            self.playback.track_started_at = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+            );
             let gen = self.play_gen;
             match resolved {
                 ResolvedPlayback::Cached(path) => {
@@ -3923,6 +3935,12 @@ impl App {
         self.playback.paused = false;
         self.playback.elapsed = Duration::ZERO;
         self.playback.total = None;
+        self.playback.track_started_at = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+        );
         let url = station.stream_url.trim().to_string();
         if url.is_empty() {
             self.flash_status_secs("Radio: stream URL is empty", 5);
