@@ -3575,12 +3575,19 @@ impl App {
             None
         };
 
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let start_time = now - self.playback.elapsed.as_secs() as i64;
+        let end_time = self.playback.total.map(|d| start_time + d.as_secs() as i64);
+
         crate::discord::DiscordNotify::Update {
             artist: song.artist.clone().unwrap_or_default(),
             song_name: song.title.clone(),
             album: song.album.clone().unwrap_or_default(),
-            elapsed_secs: self.playback.elapsed.as_secs_f64(),
-            total_secs: self.playback.total.map(|d| d.as_secs_f64()),
+            start_time,
+            end_time,
             paused: false,
             cover_id,
             cover_bytes,

@@ -4,7 +4,7 @@ use discord_rich_presence::{
 };
 use reqwest::multipart;
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 #[derive(Debug, Clone)]
@@ -13,8 +13,8 @@ pub enum DiscordNotify {
         artist: String,
         song_name: String,
         album: String,
-        elapsed_secs: f64,
-        total_secs: Option<f64>,
+        start_time: i64,
+        end_time: Option<i64>,
         paused: bool,
         cover_id: Option<String>,
         cover_bytes: Option<Vec<u8>>,
@@ -129,8 +129,8 @@ fn spawn_discord_worker(mut rx: UnboundedReceiver<DiscordNotify>) -> std::thread
                                 artist,
                                 song_name,
                                 album,
-                                elapsed_secs,
-                                total_secs,
+                                start_time,
+                                end_time,
                                 paused,
                                 cover_id,
                                 cover_bytes,
@@ -199,18 +199,11 @@ fn spawn_discord_worker(mut rx: UnboundedReceiver<DiscordNotify>) -> std::thread
                                             .large_text(album.as_str()),
                                     );
 
-                                if *elapsed_secs >= 0.0 {
-                                    let now = SystemTime::now()
-                                        .duration_since(UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs() as i64;
-                                    let start_time = now - elapsed_secs.floor() as i64;
-                                    let mut t = Timestamps::new().start(start_time);
-                                    if let Some(total) = total_secs {
-                                        t = t.end(start_time + total.floor() as i64);
-                                    }
-                                    activity = activity.timestamps(t);
+                                let mut t = Timestamps::new().start(*start_time);
+                                if let Some(end) = end_time {
+                                    t = t.end(*end);
                                 }
+                                activity = activity.timestamps(t);
 
                                 if let Err(e) = client.set_activity(activity) {
                                     eprintln!("warn: discord: failed to set activity, retrying in 5s: {}", e);
