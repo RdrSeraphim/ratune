@@ -1090,6 +1090,18 @@ pub async fn scrobble_auth(save_keyring: bool) -> Result<()> {
     keyring_init::install_default_keyring_store();
 
     let (service, api_key, api_secret) = config::load_scrobble_app_credentials()?;
+
+    if service == ratune_scrobble::ScrobbleService::ListenBrainz {
+        anyhow::bail!(
+            "ListenBrainz does not use OAuth authentication.\n\
+             Instead, get your user token from https://listenbrainz.org/settings/\n\
+             and store it with:  ratune scrobble-api-secret --save-keyring\n\
+             Then set in config.toml:\n  \
+               service = \"listenbrainz\"\n  \
+               enabled = true"
+        );
+    }
+
     let client = AuthClient::new(service, api_key, api_secret);
 
     eprintln!(
@@ -1150,6 +1162,7 @@ fn scrobble_service_display(service: ratune_scrobble::ScrobbleService) -> &'stat
     match service {
         ratune_scrobble::ScrobbleService::LastFm => "Last.fm",
         ratune_scrobble::ScrobbleService::LibreFm => "Libre.fm",
+        ratune_scrobble::ScrobbleService::ListenBrainz => "ListenBrainz",
     }
 }
 
@@ -1157,59 +1170,98 @@ fn scrobble_keyring_user_label(service: ratune_scrobble::ScrobbleService, kind: 
     match (service, kind) {
         (ratune_scrobble::ScrobbleService::LastFm, "api_secret") => "lastfm|api_secret",
         (ratune_scrobble::ScrobbleService::LibreFm, "api_secret") => "librefm|api_secret",
+        (ratune_scrobble::ScrobbleService::ListenBrainz, "api_secret") => "listenbrainz|api_secret",
         (ratune_scrobble::ScrobbleService::LastFm, "session") => "lastfm|session",
         (ratune_scrobble::ScrobbleService::LibreFm, "session") => "librefm|session",
         (_, other) => other,
     }
 }
 
-/// Prompt for the Last.fm / Libre.fm API shared secret.
+/// Prompt for the scrobble API shared secret / user token.
 pub fn scrobble_api_secret(save_keyring: bool) -> Result<()> {
     use inquire::Password;
 
     keyring_init::install_default_keyring_store();
 
     let (service, api_key) = config::load_scrobble_api_key()?;
-    eprintln!(
-        "{} API shared secret for application key {api_key}",
-        scrobble_service_display(service)
-    );
 
-    let secret = Password::new("API shared secret:")
-        .without_confirmation()
-        .prompt()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let secret = secret.trim();
-    if secret.is_empty() {
-        anyhow::bail!("empty API secret");
-    }
-
-    if save_keyring {
-        match config::store_scrobble_api_secret(service, secret) {
-            Ok(()) => {
-                eprintln!(
-                    "API secret saved to the OS keyring (service \"ratune\", user \"{}\", {}).",
-                    scrobble_keyring_user_label(service, "api_secret"),
-                    keyring_init::KeyringBackend::scrobble().label()
-                );
-                eprintln!("You can leave api_secret empty in config and unset LASTFM_API_SECRET.");
+    if service == ratune_scrobble::ScrobbleService::ListenBrainz {
+        eprintln!(
+            "ListenBrainz user token (get yours at https://listenbrainz.org/settings/)"
+        );
+        let token = Password::new("User token:")
+            .without_confirmation()
+            .prompt()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let token = token.trim();
+        if token.is_empty() {
+            anyhow::bail!("empty user token");
+        }
+        if save_keyring {
+            match config::store_scrobble_api_secret(service, token) {
+                Ok(()) => {
+                    eprintln!(
+                        "User token saved to the OS keyring (service \"ratune\", user \"listenbrainz|api_secret\", {}).",
+                        keyring_init::KeyringBackend::scrobble().label()
+                    );
+                    eprintln!("You can leave api_secret empty in config and unset LISTENBRAINZ_API_SECRET.");
+                }
+                Err(e) => {
+                    eprintln!("warning: could not save user token to keyring: {e:#}");
+                    eprintln!("Add it manually to ~/.config/ratune/config.toml:");
+                    eprintln!("  api_secret = \"{token}\"");
+                }
             }
-            Err(e) => {
-                eprintln!("warning: could not save API secret to keyring: {e:#}");
-                eprintln!("Add it manually to ~/.config/ratune/config.toml:");
-                eprintln!("  api_secret = \"{secret}\"");
-            }
+        } else {
+            eprintln!();
+            eprintln!("Add to ~/.config/ratune/config.toml under [scrobble]:");
+            eprintln!("  api_secret = \"{token}\"");
+            eprintln!();
+            eprintln!("Or store in the OS keyring and leave api_secret empty:");
+            eprintln!("  ratune scrobble-api-secret --save-keyring");
         }
     } else {
-        eprintln!();
-        eprintln!("Add to ~/.config/ratune/config.toml under [scrobble]:");
-        eprintln!("  api_secret = \"{secret}\"");
-        eprintln!();
-        eprintln!("Or store in the OS keyring and leave api_secret empty:");
-        eprintln!("  ratune scrobble-api-secret --save-keyring");
-        eprintln!();
-        eprintln!("Or export for the current shell:");
-        eprintln!("  export LASTFM_API_SECRET=\"{secret}\"");
+        eprintln!(
+            "{} API shared secret for application key {api_key}",
+            scrobble_service_display(service)
+        );
+
+        let secret = Password::new("API shared secret:")
+            .without_confirmation()
+            .prompt()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let secret = secret.trim();
+        if secret.is_empty() {
+            anyhow::bail!("empty API secret");
+        }
+
+        if save_keyring {
+            match config::store_scrobble_api_secret(service, secret) {
+                Ok(()) => {
+                    eprintln!(
+                        "API secret saved to the OS keyring (service \"ratune\", user \"{}\", {}).",
+                        scrobble_keyring_user_label(service, "api_secret"),
+                        keyring_init::KeyringBackend::scrobble().label()
+                    );
+                    eprintln!("You can leave api_secret empty in config and unset LASTFM_API_SECRET.");
+                }
+                Err(e) => {
+                    eprintln!("warning: could not save API secret to keyring: {e:#}");
+                    eprintln!("Add it manually to ~/.config/ratune/config.toml:");
+                    eprintln!("  api_secret = \"{secret}\"");
+                }
+            }
+        } else {
+            eprintln!();
+            eprintln!("Add to ~/.config/ratune/config.toml under [scrobble]:");
+            eprintln!("  api_secret = \"{secret}\"");
+            eprintln!();
+            eprintln!("Or store in the OS keyring and leave api_secret empty:");
+            eprintln!("  ratune scrobble-api-secret --save-keyring");
+            eprintln!();
+            eprintln!("Or export for the current shell:");
+            eprintln!("  export LASTFM_API_SECRET=\"{secret}\"");
+        }
     }
 
     Ok(())

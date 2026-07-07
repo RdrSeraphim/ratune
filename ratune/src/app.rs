@@ -665,10 +665,10 @@ pub struct App {
     pub play_recorded: bool,
     /// Unix seconds when the current track began playing (Audioscrobbler timestamp).
     track_started_at: Option<i64>,
-    /// True once the current track has been submitted to Last.fm / Libre.fm.
+    /// True once the current track has been submitted to the scrobble service.
     audioscrobbler_scrobbled: bool,
-    /// Authenticated Audioscrobbler client when `[scrobble].enabled` is configured.
-    scrobble_client: Option<ratune_scrobble::AudioscrobblerClient>,
+    /// Authenticated scrobble client when `[scrobble].enabled` is configured.
+    scrobble_client: Option<ratune_scrobble::ScrobbleClient>,
     /// Failed scrobbles persisted for retry when offline.
     pub scrobble_queue: crate::scrobble_queue::ScrobbleQueue,
     scrobble_queue_path: std::path::PathBuf,
@@ -753,7 +753,7 @@ impl App {
             BrowseMode::Files => BrowseMode::Files,
             BrowseMode::Artists => BrowseMode::Artists,
         };
-        let scrobble_client = config.audioscrobbler_client();
+        let scrobble_client = config.scrobble_client();
         let scrobble_queue_path = crate::scrobble_queue::scrobble_queue_path();
         let scrobble_queue = crate::scrobble_queue::ScrobbleQueue::load(&scrobble_queue_path)
             .unwrap_or_else(|e| {

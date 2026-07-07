@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ratune_scrobble::{AudioscrobblerClient, TrackInfo};
+use ratune_scrobble::{ScrobbleClient, TrackInfo};
 use ratune_subsonic::{Song, SubsonicClient};
 use tokio::sync::mpsc;
 
@@ -22,7 +22,7 @@ pub fn track_from_song(song: &Song) -> TrackInfo {
     }
 }
 
-pub fn spawn_now_playing(client: AudioscrobblerClient, track: TrackInfo) {
+pub fn spawn_now_playing(client: ScrobbleClient, track: TrackInfo) {
     tokio::spawn(async move {
         if let Err(e) = client.update_now_playing(&track).await {
             eprintln!("scrobble: now playing failed: {e:#}");
@@ -31,7 +31,7 @@ pub fn spawn_now_playing(client: AudioscrobblerClient, track: TrackInfo) {
 }
 
 pub fn spawn_audioscrobbler_scrobble(
-    client: AudioscrobblerClient,
+    client: ScrobbleClient,
     track: TrackInfo,
     timestamp: i64,
     tx: mpsc::Sender<LibraryUpdate>,
@@ -65,7 +65,7 @@ pub fn spawn_subsonic_scrobble(client: Arc<SubsonicClient>, song_id: String) {
 }
 
 pub fn spawn_flush_scrobble_queue(
-    client: AudioscrobblerClient,
+    client: ScrobbleClient,
     entries: Vec<QueuedScrobble>,
     tx: mpsc::Sender<LibraryUpdate>,
 ) {

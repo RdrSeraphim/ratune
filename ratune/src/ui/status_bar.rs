@@ -44,6 +44,7 @@ fn scrobble_service_name(app: &App) -> &'static str {
     match app.config.scrobble_service {
         ratune_scrobble::ScrobbleService::LastFm => "Last.fm",
         ratune_scrobble::ScrobbleService::LibreFm => "Libre.fm",
+        ratune_scrobble::ScrobbleService::ListenBrainz => "ListenBrainz",
     }
 }
 

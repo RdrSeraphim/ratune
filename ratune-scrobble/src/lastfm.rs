@@ -13,6 +13,9 @@ use crate::track::TrackInfo;
 pub enum ScrobbleService {
     LastFm,
     LibreFm,
+    /// ListenBrainz is handled by a separate client (`ListenBrainzClient`) but
+    /// included here for parsing/display and queue-service routing.
+    ListenBrainz,
 }
 
 impl ScrobbleService {
@@ -20,6 +23,7 @@ impl ScrobbleService {
         match s.trim().to_ascii_lowercase().as_str() {
             "lastfm" | "last.fm" | "last_fm" => Some(Self::LastFm),
             "librefm" | "libre.fm" | "libre_fm" => Some(Self::LibreFm),
+            "listenbrainz" | "listenbrainz.org" => Some(Self::ListenBrainz),
             _ => None,
         }
     }
@@ -28,6 +32,7 @@ impl ScrobbleService {
         match self {
             Self::LastFm => "https://ws.audioscrobbler.com/2.0/",
             Self::LibreFm => "https://libre.fm/2.0/",
+            Self::ListenBrainz => "https://api.listenbrainz.org/1/submit-listens",
         }
     }
 
@@ -35,6 +40,7 @@ impl ScrobbleService {
         match self {
             Self::LastFm => "Last.fm",
             Self::LibreFm => "Libre.fm",
+            Self::ListenBrainz => "ListenBrainz",
         }
     }
 }
@@ -155,6 +161,40 @@ impl AudioscrobblerClient {
     }
 }
 
+/// Unified client enum: either an Audioscrobbler (Last.fm/Libre.fm) or ListenBrainz client.
+#[derive(Debug, Clone)]
+pub enum ScrobbleClient {
+    /// Last.fm or Libre.fm (MD5-signed form POST).
+    Audioscrobbler(AudioscrobblerClient),
+    /// ListenBrainz (JSON POST with bearer token).
+    ListenBrainz(crate::listenbrainz::ListenBrainzClient),
+}
+
+impl ScrobbleClient {
+    pub fn service(&self) -> ScrobbleService {
+        match self {
+            Self::Audioscrobbler(c) => c.service(),
+            Self::ListenBrainz(_) => ScrobbleService::ListenBrainz,
+        }
+    }
+
+    /// Announce the currently playing track.
+    pub async fn update_now_playing(&self, track: &TrackInfo) -> Result<()> {
+        match self {
+            Self::Audioscrobbler(c) => c.update_now_playing(track).await,
+            Self::ListenBrainz(c) => c.update_now_playing(track).await,
+        }
+    }
+
+    /// Submit a completed listen.
+    pub async fn scrobble(&self, track: &TrackInfo, timestamp: i64) -> Result<()> {
+        match self {
+            Self::Audioscrobbler(c) => c.scrobble(track, timestamp).await,
+            Self::ListenBrainz(c) => c.scrobble(track, timestamp).await,
+        }
+    }
+}
+
 /// MD5 signature required for all authenticated Last.fm POST requests.
 pub(crate) fn api_sig(params: &BTreeMap<String, String>, secret: &str) -> String {
     let mut concat = String::new();
@@ -195,6 +235,22 @@ mod tests {
             ScrobbleService::parse("librefm"),
             Some(ScrobbleService::LibreFm)
         );
+        assert_eq!(
+            ScrobbleService::parse("ListenBrainz"),
+            Some(ScrobbleService::ListenBrainz)
+        );
+        assert_eq!(
+            ScrobbleService::parse("listenbrainz.org"),
+            Some(ScrobbleService::ListenBrainz)
+        );
         assert!(ScrobbleService::parse("spotify").is_none());
+    }
+
+    #[test]
+    fn scrobble_client_wraps_listenbrainz() {
+        use crate::listenbrainz::ListenBrainzClient;
+        let lb = ListenBrainzClient::new("tok".into());
+        let client = ScrobbleClient::ListenBrainz(lb);
+        assert_eq!(client.service(), ScrobbleService::ListenBrainz);
     }
 }

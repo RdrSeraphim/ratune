@@ -50,6 +50,9 @@ impl AuthClient {
         let base = match self.service {
             ScrobbleService::LastFm => "https://www.last.fm/api/auth/",
             ScrobbleService::LibreFm => "https://libre.fm/api/auth/",
+            ScrobbleService::ListenBrainz => {
+                unreachable!("ListenBrainz does not use OAuth auth flow")
+            }
         };
         format!("{base}?api_key={}&token={token}", self.api_key)
     }

@@ -13,7 +13,7 @@ fn print_help() {
     println!();
     println!("Usage:");
     println!("  {PKG_NAME}                               Start the terminal music player");
-    println!("  {PKG_NAME} scrobble-api-secret             Prompt for API shared secret");
+    println!("  {PKG_NAME} scrobble-api-secret             Prompt for API shared secret / ListenBrainz token");
     println!("  {PKG_NAME} scrobble-api-secret --save-keyring  …and store it in the OS keyring");
     println!(
         "  {PKG_NAME} scrobble-auth                     Obtain a Last.fm / Libre.fm session key"
@@ -22,6 +22,11 @@ fn print_help() {
     println!();
     println!("Configuration: ~/.config/ratune/config.toml");
     println!("{PKG_REPOSITORY}");
+    println!();
+    println!("Scrobble services: lastfm, librefm, listenbrainz");
+    println!("  Set [scrobble].service and credentials, then enabled = true.");
+    println!("  ListenBrainz: get your user token at https://listenbrainz.org/settings/");
+    println!("  and store with: {PKG_NAME} scrobble-api-secret --save-keyring");
     println!();
     println!("Options:");
     println!("  -V, --version  Print version and exit");

@@ -1585,10 +1585,17 @@ impl Config {
         } else {
             (String::new(), String::new(), String::new())
         };
-        let scrobble_enabled = scrobble_enabled
-            && !scrobble_api_key.is_empty()
-            && !scrobble_api_secret.is_empty()
-            && !scrobble_session_key.is_empty();
+        let scrobble_enabled = match scrobble_service {
+            ratune_scrobble::ScrobbleService::ListenBrainz => {
+                scrobble_enabled && !scrobble_api_secret.is_empty()
+            }
+            _ => {
+                scrobble_enabled
+                    && !scrobble_api_key.is_empty()
+                    && !scrobble_api_secret.is_empty()
+                    && !scrobble_session_key.is_empty()
+            }
+        };
 
         let radio_enabled = file_cfg.radio.enabled.unwrap_or_else(default_radio_enabled);
         let radio_fetch_station_icons = file_cfg
@@ -1688,17 +1695,30 @@ impl Config {
         })
     }
 
-    /// Build an authenticated Audioscrobbler client when scrobbling is enabled.
-    pub fn audioscrobbler_client(&self) -> Option<ratune_scrobble::AudioscrobblerClient> {
+    /// Build an authenticated scrobble client when scrobbling is enabled.
+    pub fn scrobble_client(&self) -> Option<ratune_scrobble::ScrobbleClient> {
         if !self.scrobble_enabled {
             return None;
         }
-        Some(ratune_scrobble::AudioscrobblerClient::new(
-            self.scrobble_service,
-            self.scrobble_api_key.clone(),
-            self.scrobble_api_secret.clone(),
-            self.scrobble_session_key.clone(),
-        ))
+        match self.scrobble_service {
+            ratune_scrobble::ScrobbleService::ListenBrainz => {
+                let token = self.scrobble_api_secret.clone();
+                if token.is_empty() {
+                    return None;
+                }
+                Some(ratune_scrobble::ScrobbleClient::ListenBrainz(
+                    ratune_scrobble::ListenBrainzClient::new(token),
+                ))
+            }
+            _ => Some(ratune_scrobble::ScrobbleClient::Audioscrobbler(
+                ratune_scrobble::AudioscrobblerClient::new(
+                    self.scrobble_service,
+                    self.scrobble_api_key.clone(),
+                    self.scrobble_api_secret.clone(),
+                    self.scrobble_session_key.clone(),
+                ),
+            )),
+        }
     }
 
     /// Tab bar position and now-playing height for [`crate::ui::layout::build_layout`].
@@ -1925,17 +1945,17 @@ source = "lrclib"
 
 # [scrobble]
 # enabled = false
-# service = "lastfm"          # or "librefm"
-# api_key = ""
-# api_secret = ""            # plaintext supported; or api_secret_command / keyring
-# session_key = ""           # from `ratune scrobble-auth`; or session_key_command / keyring
+# service = "lastfm"          # or "librefm" or "listenbrainz"
+# api_key = ""               # only used by lastfm / librefm (not listenbrainz)
+# api_secret = ""            # lastfm/librefm: shared secret; listenbrainz: user token
+# session_key = ""           # from `ratune scrobble-auth`; not used for listenbrainz
 # api_secret_command = ""
 # session_key_command = ""
 # scrobble_to_server = true   # Subsonic /scrobble for Navidrome play counts
 #
 # CLI helpers (see README § Scrobbling):
 #   ratune scrobble-api-secret [--save-keyring]
-#   ratune scrobble-auth [--save-keyring]
+#   ratune scrobble-auth [--save-keyring]    (not available for listenbrainz)
 "##;
     std::fs::write(path, default_toml)
         .with_context(|| format!("writing default config to {}", path.display()))?;
@@ -2153,6 +2173,7 @@ fn merge_env_overrides(cfg: &mut FileConfig) {
     if let Ok(v) = std::env::var("LASTFM_API_SECRET")
         .or_else(|_| std::env::var("LASTFM_SHARED_SECRET"))
         .or_else(|_| std::env::var("LIBREFM_API_SECRET"))
+        .or_else(|_| std::env::var("LISTENBRAINZ_API_SECRET"))
     {
         cfg.scrobble.api_secret = v;
     }
@@ -2163,21 +2184,37 @@ fn merge_env_overrides(cfg: &mut FileConfig) {
     }
 }
 
-/// Resolve Audioscrobbler credentials when `[scrobble].enabled` is true.
-fn resolve_scrobble_credentials(sec: &ScrobbleSection) -> Result<(String, String, String)> {
-    let api_key = sec.api_key.trim();
-    if api_key.is_empty() {
-        bail!("[scrobble].api_key is empty (or set LASTFM_API_KEY / LIBREFM_API_KEY)");
+/// Resolve scrobble credentials when `[scrobble].enabled` is true.
+///
+/// For Last.fm / Libre.fm: `(api_key, api_secret, session_key)` all required.
+/// For ListenBrainz: `("", user_token, "")` — only `api_secret` is used.
+fn resolve_scrobble_credentials(
+    sec: &ScrobbleSection,
+) -> Result<(String, String, String)> {
+    let service = resolve_scrobble_service(sec);
+
+    match service {
+        ratune_scrobble::ScrobbleService::ListenBrainz => {
+            let user_token = resolve_scrobble_api_secret(sec)?;
+            Ok((String::new(), user_token, String::new()))
+        }
+        _ => {
+            let api_key = sec.api_key.trim();
+            if api_key.is_empty() {
+                bail!("[scrobble].api_key is empty (or set LASTFM_API_KEY / LIBREFM_API_KEY)");
+            }
+            let api_secret = resolve_scrobble_api_secret(sec)?;
+            let session_key = resolve_scrobble_session_key(sec)?;
+            Ok((api_key.to_string(), api_secret, session_key))
+        }
     }
-    let api_secret = resolve_scrobble_api_secret(sec)?;
-    let session_key = resolve_scrobble_session_key(sec)?;
-    Ok((api_key.to_string(), api_secret, session_key))
 }
 
 fn scrobble_service_name(service: ratune_scrobble::ScrobbleService) -> &'static str {
     match service {
         ratune_scrobble::ScrobbleService::LastFm => "lastfm",
         ratune_scrobble::ScrobbleService::LibreFm => "librefm",
+        ratune_scrobble::ScrobbleService::ListenBrainz => "listenbrainz",
     }
 }
 
@@ -2302,6 +2339,7 @@ pub fn store_scrobble_session_key(
 
 /// Load `[scrobble]` application credentials for the browser auth flow.
 ///
+/// For Last.fm/Libre.fm: requires `api_key`; for ListenBrainz: only `api_secret`.
 /// Does not require a session key or Subsonic password.
 pub fn load_scrobble_app_credentials() -> Result<(ratune_scrobble::ScrobbleService, String, String)>
 {
@@ -2319,23 +2357,31 @@ pub fn load_scrobble_app_credentials() -> Result<(ratune_scrobble::ScrobbleServi
     merge_env_overrides(&mut file_cfg);
 
     let sec = &file_cfg.scrobble;
-    let (service, api_key) = {
-        let service = resolve_scrobble_service(sec);
-        let api_key = sec.api_key.trim();
-        if api_key.is_empty() {
-            bail!(
-                "[scrobble].api_key is empty in {} (or set LASTFM_API_KEY / LIBREFM_API_KEY)",
-                config_path.display()
-            );
-        }
-        (service, api_key.to_string())
-    };
-    let api_secret = resolve_scrobble_api_secret(sec)?;
+    let service = resolve_scrobble_service(sec);
 
-    Ok((service, api_key, api_secret))
+    match service {
+        ratune_scrobble::ScrobbleService::ListenBrainz => {
+            let user_token = resolve_scrobble_api_secret(sec)?;
+            Ok((service, String::new(), user_token))
+        }
+        _ => {
+            let api_key = sec.api_key.trim();
+            if api_key.is_empty() {
+                bail!(
+                    "[scrobble].api_key is empty in {} (or set LASTFM_API_KEY / LIBREFM_API_KEY)",
+                    config_path.display()
+                );
+            }
+            let api_secret = resolve_scrobble_api_secret(sec)?;
+            Ok((service, api_key.to_string(), api_secret))
+        }
+    }
 }
 
-/// Load service + application API key (for `scrobble-auth` / store helpers).
+/// Load service + application API key (for `scrobble-api-secret` / store helpers).
+///
+/// For ListenBrainz, `api_key` is not required — the function succeeds with an
+/// empty key string when only `service` is needed.
 pub fn load_scrobble_api_key() -> Result<(ratune_scrobble::ScrobbleService, String)> {
     let config_path = config_file_path()?;
     if !config_path.exists() {
@@ -2352,14 +2398,20 @@ pub fn load_scrobble_api_key() -> Result<(ratune_scrobble::ScrobbleService, Stri
 
     let sec = &file_cfg.scrobble;
     let service = resolve_scrobble_service(sec);
-    let api_key = sec.api_key.trim();
-    if api_key.is_empty() {
-        bail!(
-            "[scrobble].api_key is empty in {} (or set LASTFM_API_KEY / LIBREFM_API_KEY)",
-            config_path.display()
-        );
+
+    match service {
+        ratune_scrobble::ScrobbleService::ListenBrainz => Ok((service, String::new())),
+        _ => {
+            let api_key = sec.api_key.trim();
+            if api_key.is_empty() {
+                bail!(
+                    "[scrobble].api_key is empty in {} (or set LASTFM_API_KEY / LIBREFM_API_KEY)",
+                    config_path.display()
+                );
+            }
+            Ok((service, api_key.to_string()))
+        }
     }
-    Ok((service, api_key.to_string()))
 }
 
 #[cfg(test)]
