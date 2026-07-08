@@ -41,8 +41,8 @@ Ratune was built to bring together a combination of features often missing from 
 - **Folder navigation**: Optional Browse layout that follows server music folders for servers that provide it.
 - **Customization**: Keybinds, theme, layout, now-playing lines, queue row template inspired by ncmpcpp.
 - **Mouse support**: Click tabs, transport controls, the seek bar, queue rows, and browse/home lists.
-- **Integration**: Linux MPRIS (media keys, `playerctl`).
-- **Scrobbling**: Last.fm and Libre.fm (Audioscrobbler), plus optional Subsonic `/scrobble` for Navidrome play counts.
+- **Integration**: Linux MPRIS (media keys, `playerctl`), Discord rich presence.
+- **Scrobbling**: ListenBrainz, Last.fm, and Libre.fm (Audioscrobbler), plus optional Subsonic `/scrobble` for Navidrome play counts.
 
 ---
 
@@ -313,11 +313,11 @@ folder_navigation = true
 
 ### Scrobbling
 
-Ratune can scrobble listens to Last.fm or Libre.fm and optionally notify your Subsonic server so Navidrome records play counts. 
+Ratune can scrobble listens to ListenBrainz, Last.fm, or Libre.fm and optionally notify your Subsonic server so Navidrome records play counts. 
 
 Full reference: [`[scrobble]`](docs/sample-config.toml) in the sample config.
 
-#### Enable
+#### Last.fm / Libre.fm
 
 Register an API account at [Last.fm](https://www.last.fm/api/account/create) (or Libre.fm equivalent), then add a `[scrobble]` block. 
 
@@ -331,7 +331,7 @@ scrobble_to_server = true   # Subsonic /scrobble (default: true; works without L
 
 Same options for secret handling as Subsonic password are provided.
 
-#### keyring or secret commands
+##### keyring or secret commands
 
 To not store secrets in the file (synced dotfiles, shared machines, etc.), leave `api_secret` / `session_key` empty and use either command in config or ratune functions to save to the keyring.
 
@@ -352,7 +352,7 @@ Without `--save-keyring`, each command prints the value to paste into config ins
 
 If you previously saved scrobble secrets with an older build (kernel keyutils), re-run the commands above once and they will land in your desktop wallet instead.
 
-#### plaintext
+##### plaintext
 
 You can optionally store either/both of these as plaintext instead.
 
@@ -368,16 +368,47 @@ scrobble_to_server = true   # Subsonic /scrobble (default: true; works without L
 
 Get `session_key` once with `ratune scrobble-auth` (prints the key for config unless you pass `--save-keyring`).
 
+#### ListenBrainz
+
+ListenBrainz uses a simple bearer token (no OAuth or API key/secret/session). Set `service = "listenbrainz"` and provide your user token in `api_secret`:
+
+```toml
+[scrobble]
+enabled = true
+service = "listenbrainz"
+# api_secret = ""      # yours from https://listenbrainz.org/settings/
+scrobble_to_server = true
+```
+
+Get your user token from [ListenBrainz settings](https://listenbrainz.org/settings/) and store it:
+
+```sh
+ratune scrobble-api-secret --save-keyring
+```
+
+Env var: `LISTENBRAINZ_API_SECRET` (honoured alongside `LASTFM_API_SECRET`).
+
 #### Behaviour
 
 - **Now playing** is sent when a track starts.
-- **Scrobble** fires at min(`min_percent`% of track length, `max_listen_seconds`). Defaults for Last.fm: 50%, 4 minutes. Tracks ≤ `min_track_seconds` (default 30 s) are skipped.
+- **Scrobble** fires at min(`min_percent`% of track length, `max_listen_seconds`). Defaults for Audioscrobbler: 50%, 4 minutes. Tracks ≤ `min_track_seconds` (default 30 s) are skipped.
 - **Subsonic scrobble** (if enabled) uses a separate local threshold (default: 50%, 30 s cap).
 - Both sets of thresholds are optional under `[scrobble.thresholds.local]` and `[scrobble.thresholds.audioscrobbler]` — see the sample config. Audioscrobbler defaults follow [Last.fm’s scrobbling rules](https://www.last.fm/api/scrobbling); deviating may cause ignored scrobbles.
-- Failed Last.fm submissions are queued in `~/.local/share/ratune/scrobble-queue.json` and retried on the next launch (entries older than 14 days are dropped).
-- The status bar shows the service name when scrobbling is enabled; a **✓** appears briefly after a successful submit. Pending queue items show as `Last.fm (N)`.
+- Failed submissions are queued in `~/.local/share/ratune/scrobble-queue.json` and retried on the next launch (entries older than 14 days are dropped).
+- The status bar shows the service name when scrobbling is enabled; a **✓** appears briefly after a successful submit. Pending queue items show as e.g. `ListenBrainz (3)`.
 
----
+### Discord Rich Presence
+
+When enabled (default: `true` in `[player]`), Ratune sends playback information to Discord over the IPC protocol, showing the currently playing track's artist, title, album, and elapsed time. Configure via:
+
+```toml
+[player]
+discord = true   # set false to disable
+```
+
+### MPRIS (Linux)
+
+Ratune registers a standard MPRIS player on the session D-Bus when `[player] mpris = true` (default). This allows media keys, `playerctl`, and desktop environment media widgets to control playback and display metadata.
 
 ## Default keybinds
 
@@ -503,9 +534,9 @@ This repository is a Cargo workspace with four crates:
 
 | Crate | Role |
 | --- | --- |
-| [`ratune`](ratune/) | TUI, event loop, state, art, fzf, MPRIS, scrobbling |
+| [`ratune`](ratune/) | TUI, event loop, state, art, fzf, MPRIS, Discord, scrobbling |
 | [`ratune-subsonic`](ratune-subsonic/) | Subsonic HTTP client and models |
-| [`ratune-scrobble`](ratune-scrobble/) | Last.fm / Libre.fm Audioscrobbler client and play thresholds |
+| [`ratune-scrobble`](ratune-scrobble/) | Last.fm, Libre.fm, ListenBrainz scrobble clients and play thresholds |
 | [`ratune-player`](ratune-player/) | Audio (rodio), gapless, sample tap for the visualizer |
 
 Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
