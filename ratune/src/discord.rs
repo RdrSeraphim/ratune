@@ -175,7 +175,7 @@ fn spawn_discord_worker(mut rx: UnboundedReceiver<DiscordNotify>) -> std::thread
                                                                 *cover_bytes = None; // Successfully uploaded
                                                             }
                                                             Ok(_) => eprintln!("warn: discord: uguu.se returned success=false. Body: {text}"),
-                                                            Err(e) => eprintln!("warn: discord: failed to parse uguu.se response (HTTP {status}): {e}\nBody: {text}"),
+                                                            Err(e) => eprintln!("warn: discord: failed to parse uguu.se response (HTTP {status})"),
                                                         },
                                                         Err(e) => eprintln!("warn: discord: failed to read uguu.se response body: {e}"),
                                                     }
